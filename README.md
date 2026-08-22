@@ -36,13 +36,123 @@ Compare the output of your CUDA Sobel filter with a CPU-based Sobel filter imple
 Discuss the differences in execution time and output quality.
 
 ## PROGRAM:
-TYPE YOUR CODE HERE
+```
+%%writefile sobelEdgeDetectionFilter.cu
+#include <stdio.h>
+#include <stdlib.h>
+#include <math.h>
+#include <cuda_runtime.h>
+#include <opencv2/opencv.hpp>
 
+using namespace cv;
+
+__global__ void sobelFilter(unsigned char *srcImage, unsigned char *dstImage,
+                            unsigned int width, unsigned int height) {
+
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (x >= 1 && x < width-1 && y >= 1 && y < height-1) {
+
+        int Gx[3][3] = {{-1,0,1},{-2,0,2},{-1,0,1}};
+        int Gy[3][3] = {{1,2,1},{0,0,0},{-1,-2,-1}};
+
+        int sumX = 0;
+        int sumY = 0;
+
+        for(int i=-1;i<=1;i++){
+            for(int j=-1;j<=1;j++){
+                unsigned char pixel = srcImage[(y+i)*width + (x+j)];
+                sumX += pixel * Gx[i+1][j+1];
+                sumY += pixel * Gy[i+1][j+1];
+            }
+        }
+
+        int magnitude = sqrtf(sumX*sumX + sumY*sumY);
+        magnitude = min(max(magnitude,0),255);
+
+        dstImage[y*width + x] = (unsigned char)magnitude;
+    }
+}
+
+void checkCudaErrors(cudaError_t r) {
+    if (r != cudaSuccess) {
+        fprintf(stderr, "CUDA Error: %s\n", cudaGetErrorString(r));
+        exit(EXIT_FAILURE);
+    }
+}
+
+int main() {
+
+    Mat image = imread("/content/images.jpeg", IMREAD_GRAYSCALE);
+
+    if (image.empty()) {
+        printf("Error: Image not found.\n");
+        return -1;
+    }
+
+    int width = image.cols;
+    int height = image.rows;
+
+    size_t imageSize = width * height * sizeof(unsigned char);
+
+    unsigned char *h_outputImage = (unsigned char*)malloc(imageSize);
+
+    unsigned char *d_inputImage, *d_outputImage;
+
+    checkCudaErrors(cudaMalloc(&d_inputImage,imageSize));
+    checkCudaErrors(cudaMalloc(&d_outputImage,imageSize));
+
+    checkCudaErrors(cudaMemcpy(d_inputImage,
+                               image.data,
+                               imageSize,
+                               cudaMemcpyHostToDevice));
+
+    dim3 blockSize(16,16);
+    dim3 gridSize((width+15)/16,(height+15)/16);
+
+    sobelFilter<<<gridSize,blockSize>>>(d_inputImage,d_outputImage,width,height);
+
+    checkCudaErrors(cudaMemcpy(h_outputImage,
+                               d_outputImage,
+                               imageSize,
+                               cudaMemcpyDeviceToHost));
+
+    Mat outputImage(height,width,CV_8UC1,h_outputImage);
+
+    imwrite("output_sobel.jpeg",outputImage);
+
+    printf("Edge detection completed.\n");
+
+    return 0;
+}
+```
+
+```
+
+import cv2
+from matplotlib import pyplot as plt
+
+# Read and display the output image
+output_image_path = '/content/output_sobel.jpeg'
+output_image = cv2.imread(output_image_path, cv2.IMREAD_GRAYSCALE)  # Use IMREAD_GRAYSCALE if it's a single-channel image
+
+# Display the image
+plt.imshow(output_image, cmap='gray')
+plt.title('Edge Detection Output')
+plt.axis('off')  # Hide the axes
+plt.show()
+```
 ## OUTPUT:
-SHOW YOUR OUTPUT HERE
+
+<img width="194" height="259" alt="images" src="https://github.com/user-attachments/assets/f3ef2619-4221-4a3c-93c9-142fd7fd6226" />
+
+
+
+<img width="507" height="532" alt="image" src="https://github.com/user-attachments/assets/661b3817-84b9-4432-947b-3d4e212e630c" />
 
 ## RESULT:
-Thus the program has been executed by using CUDA to ________________.
+Thus the program has been executed by using CUDA to implement and accelerate the Sobel edge detection filter for color images using parallel GPU processing.
 
 Questions:
 
